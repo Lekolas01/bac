@@ -1,3 +1,5 @@
 *db.lock
 bin/
 debug/
+.svn/
+trunk/
