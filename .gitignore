@@ -4,6 +4,6 @@ debug/
 .svn/
 trunk/
 .vs/
-/.suo/
+**/.suo/
 *.ide/
 *.vspx

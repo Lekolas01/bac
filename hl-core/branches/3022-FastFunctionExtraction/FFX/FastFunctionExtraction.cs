@@ -178,6 +178,11 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         }
 
         protected override void Run(CancellationToken cancellationToken) {
+            double[] lambda;
+            double[,] coeff;
+            double[] trainNMSE;
+            double[] testNMSE;
+            double[] intercept;
             var basisFunctions = createBasisFunctions(Problem.ProblemData);
             if (Verbose) Results.Add(new Result(
               "Basis Functions",
@@ -189,7 +194,30 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             if (ConsiderDenominations) basisFunctions = basisFunctions.Concat(createDenominatorBases(Problem.ProblemData, basisFunctions)).ToList();
 
             // create either path of solutions, or one solution for given lambda
-            LearnModels(Problem.ProblemData, basisFunctions);
+            LearnModels(Problem.ProblemData, basisFunctions, out lambda, out coeff, out trainNMSE, out testNMSE, out intercept);
+
+            if (Verbose) {
+                var errorTable = NMSEGraph(coeff, lambda, trainNMSE, testNMSE);
+                Results.Add(new Result(errorTable.Name, errorTable.Description, errorTable));
+                var coeffTable = CoefficientGraph(coeff, lambda, Problem.ProblemData.AllowedInputVariables, Problem.ProblemData.Dataset);
+                Results.Add(new Result(coeffTable.Name, coeffTable.Description, coeffTable));
+            }
+
+            ItemCollection<IResult> models = new ItemCollection<IResult>();
+            for (int modelIdx = 0; modelIdx < coeff.GetUpperBound(0); modelIdx++) {
+                var coeffs = GetRow(coeff, modelIdx);
+                var tree = Tree(basisFunctions, coeffs, intercept[modelIdx]);
+                ISymbolicRegressionModel m = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeInterpreter());
+                //ISymbolicRegressionSolution s = new SymbolicRegressionSolution(m, Problem.ProblemData);
+                bool withDenom(double[] coeffarr) => coeffarr.Take(coeffarr.Length / 2).ToArray().Any(val => !val.IsAlmost(0.0));
+                models.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), m));
+            }
+
+            int complexity(double[] modelCoeffs) => modelCoeffs.Count(val => val != 0);
+            var paretoFront = getParetoFront<IResult>(models.ToArray(), coeff, trainNMSE, complexity);
+
+            if (Verbose) Results.Add(new Result("Models", "The model path returned by the Elastic Net Regression (not only the pareto-optimal subset). ", models));
+            Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", new ItemCollection<IResult>(paretoFront)));
         }
 
         private List<BasisFunction> createBasisFunctions(IRegressionProblemData problemData) {
@@ -281,12 +309,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
         // Uses ElasticNet Linear Regression to find best coefficients along the path of different lambdas
         // Results: Coefficient Graph, NMSE Graph, a set of ALL generated models, the final pareto-front of those models
-        private void LearnModels(IRegressionProblemData problemData, List<BasisFunction> basisFunctions) {
-            double[] lambda;
-            double[] trainNMSE;
-            double[] testNMSE;
-            double[,] coeff;
-            double[] intercept;
+        private void LearnModels(IRegressionProblemData problemData, List<BasisFunction> basisFunctions, out double[] lambda, out double[,] coeff, out double[] trainNMSE, out double[] testNMSE, out double[] intercept) {
             int numNominatorBases = ConsiderDenominations ? basisFunctions.Count / 2 : basisFunctions.Count;
             //IDictionary<int, ISymbolicRegressionSolution> paretoFront = new Dictionary<int, ISymbolicRegressionSolution>();
 
@@ -295,26 +318,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
             ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity, MaxNumBasisFuncs);
 
-            var errorTable = NMSEGraph(coeff, lambda, trainNMSE, testNMSE);
-            Results.Add(new Result(errorTable.Name, errorTable.Description, errorTable));
-            var coeffTable = CoefficientGraph(coeff, lambda, X_b.AllowedInputVariables, X_b.Dataset);
-            Results.Add(new Result(coeffTable.Name, coeffTable.Description, coeffTable));
-
-            ItemCollection<IResult> models = new ItemCollection<IResult>();
-            for (int modelIdx = 0; modelIdx < coeff.GetUpperBound(0); modelIdx++) {
-                var coeffs = GetRow(coeff, modelIdx);
-                var tree = Tree(basisFunctions, coeffs, intercept[modelIdx]);
-                ISymbolicRegressionModel m = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeInterpreter());
-                //ISymbolicRegressionSolution s = new SymbolicRegressionSolution(m, Problem.ProblemData);
-                bool withDenom(double[] coeffarr) => coeffarr.Take(coeffarr.Length / 2).ToArray().Any(val => !val.IsAlmost(0.0));
-                models.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), m));
-            }
-
-            int complexity(double[] modelCoeffs) => modelCoeffs.Count(val => val != 0);
-            var paretoFront = getParetoFront<IResult>(models.ToArray(), coeff, trainNMSE, complexity);
-
-            Results.Add(new Result("Models", "The model path returned by the Elastic Net Regression (not only the pareto-optimal subset). ", models));
-            Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", new ItemCollection<IResult>(paretoFront)));
+            
         }
 
         // returns all row indices of the models in coeffs that are supposed to be in the pareto front
