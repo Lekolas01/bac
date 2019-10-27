@@ -3,3 +3,4 @@ bin/
 debug/
 .svn/
 trunk/
+.vs/
