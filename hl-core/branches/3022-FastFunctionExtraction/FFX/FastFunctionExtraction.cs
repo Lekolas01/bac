@@ -483,9 +483,9 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 // only generate nodes for relevant basis functions (those with non-zero coeffs)
                 if (coeffs[i] != 0)
                     if (coeffs[i] > 0)
-                        model += " + (" + coeffs[i].ToString(culture) + ") * '" + func.Var + "'";
+                        model += " + (" + coeffs[i].ToString(culture) + ") * " + func.Var;
                     else
-                        model += " - (" + (-coeffs[i]).ToString(culture) + ") * '" + func.Var + "'";
+                        model += " - (" + (-coeffs[i]).ToString(culture) + ") * " + func.Var;
             }
             if (ConsiderDenominations && withDenom(coeffs)) {
                 model += ") / (1";
