@@ -167,46 +167,60 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
         public override bool SupportsPause { get { return true; } }
 
-        private Stopwatch sw = new Stopwatch();
-
-        // for debug purposes
-        private static TimeSpan Time(Action action) {
-            Stopwatch stopwatch = Stopwatch.StartNew();
-            action();
-            stopwatch.Stop();
-            return stopwatch.Elapsed;
-        }
-
         protected override void Run(CancellationToken cancellationToken) {
             double[] lambda;
             double[,] coeff;
             double[] trainNMSE;
             double[] testNMSE;
             double[] intercept;
-            var basisFunctions = createBasisFunctions(Problem.ProblemData);
+            var univariateBases = CreateUnivariateBases(Problem.ProblemData);
+
+            var X_b = PrepareData(Problem.ProblemData, univariateBases);
+
             if (Verbose) Results.Add(new Result(
-              "Basis Functions",
-              "A Dataset consisting of the generated Basis Functions from FFX Alg Step 1.",
-              createProblemData(Problem.ProblemData, basisFunctions)
+              "Univariate basis Functions",
+              "A Dataset consisting of the univariate basis functions.",
+              X_b
             ));
 
-            // add denominator bases to the already existing basis functions
-            if (ConsiderDenominations) basisFunctions = basisFunctions.Concat(createDenominatorBases(Problem.ProblemData, basisFunctions)).ToList();
+            // wraps the list of basis functions in a dataset, so that it can be passed on to the ElNet function
 
-            // create either path of solutions, or one solution for given lambda
-            LearnModels(Problem.ProblemData, basisFunctions, out lambda, out coeff, out trainNMSE, out testNMSE, out intercept);
+
+            // this is the first iteration (only with the univariate bases)
+            // for the purpose of optimization, only the most important sqrt(n) basis functions are to be selected for the CreateMultivariableBases step (see paper)
+            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity, MaxNumBasisFuncs);
+
+            IEnumerable<BasisFunction> relevantFuncs = FilterCoeffs(univariateBases, coeff);
+
+            if (ConsiderInteractions) {
+                relevantFuncs = CreateMultivariateBases(relevantFuncs);
+            }
+
+            // add denominator bases to the already existing basis functions
+            if (ConsiderDenominations) relevantFuncs = CreateDenominatorBases(Problem.ProblemData, relevantFuncs);
+
+            X_b = PrepareData(Problem.ProblemData, univariateBases);
+
+            if (Verbose) Results.Add(new Result(
+              "Final Basis Functions",
+              "Dataset which contains the Basis Functions after Step 1.",
+              X_b
+            ));
+
+            // "real" iteration with all Basis Functions in X_b
+            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity, MaxNumBasisFuncs);
 
             if (Verbose) {
                 var errorTable = NMSEGraph(coeff, lambda, trainNMSE, testNMSE);
                 Results.Add(new Result(errorTable.Name, errorTable.Description, errorTable));
-                var coeffTable = CoefficientGraph(coeff, lambda, Problem.ProblemData.AllowedInputVariables, Problem.ProblemData.Dataset);
+                var coeffTable = CoefficientGraph(coeff, lambda, X_b.AllowedInputVariables, X_b.Dataset);
                 Results.Add(new Result(coeffTable.Name, coeffTable.Description, coeffTable));
             }
 
             ItemCollection<IResult> models = new ItemCollection<IResult>();
             for (int modelIdx = 0; modelIdx < coeff.GetUpperBound(0); modelIdx++) {
                 var coeffs = GetRow(coeff, modelIdx);
-                var tree = Tree(basisFunctions, coeffs, intercept[modelIdx]);
+                var tree = Tree(univariateBases, coeffs, intercept[modelIdx]);
                 ISymbolicRegressionModel m = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeInterpreter());
                 //ISymbolicRegressionSolution s = new SymbolicRegressionSolution(m, Problem.ProblemData);
                 bool withDenom(double[] coeffarr) => coeffarr.Take(coeffarr.Length / 2).ToArray().Any(val => !val.IsAlmost(0.0));
@@ -216,19 +230,50 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             int complexity(double[] modelCoeffs) => modelCoeffs.Count(val => val != 0);
             var paretoFront = getParetoFront<IResult>(models.ToArray(), coeff, trainNMSE, complexity);
 
-            if (Verbose) Results.Add(new Result("Models", "The model path returned by the Elastic Net Regression (not only the pareto-optimal subset). ", models));
+            if (Verbose) Results.Add(new Result("Models", "The mode l path returned by the Elastic Net Regression (not only the pareto-optimal subset). ", models));
             Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", new ItemCollection<IResult>(paretoFront)));
         }
 
+        /* selects the sqrt(n) most important basis functions
+         * this if for the sole purpose of runtime
+         */
+        private static IEnumerable<BasisFunction> FilterCoeffs(IEnumerable<BasisFunction> univariateBases, double[,] coeff) {
+            List<BasisFunction> solution = new List<BasisFunction>();
+            int nlambdas = coeff.GetLength(0);
+            int nBasisFuncs = coeff.GetLength(1);
+            bool[] relevant = new bool[nBasisFuncs];
+            int i = 0;
+            int count = 0;
+            while (count < Math.Sqrt(nBasisFuncs) && i < nlambdas) {
+                count = 0;
+                for (int j = 0; j < nBasisFuncs; j++) {
+                    if (coeff[i, j] != 0) {
+                        count++;
+                        relevant[j] = true;
+                    } else {
+                        relevant[j] = false;
+                    }
+                }
+                i++;
+            }
+            i = 0;
+            foreach (var basisFunc in univariateBases) {
+                if (relevant[i])
+                    solution.Add(basisFunc);
+                i++;
+            }
+            return solution;
+        }
+
         private List<BasisFunction> createBasisFunctions(IRegressionProblemData problemData) {
-            var basisFunctions = createUnivariateBases(problemData);
+            var basisFunctions = CreateUnivariateBases(problemData);
 
             if (ConsiderInteractions)
-                basisFunctions = basisFunctions.Concat(createMultivariateBases(basisFunctions)).ToList();
+                basisFunctions = basisFunctions.Concat(CreateMultivariateBases(basisFunctions)).ToList();
             return basisFunctions;
         }
 
-        private List<BasisFunction> createUnivariateBases(IRegressionProblemData problemData) {
+        private List<BasisFunction> CreateUnivariateBases(IRegressionProblemData problemData) {
             var B1 = new List<BasisFunction>();
             var inputVariables = problemData.AllowedInputVariables;
             var validExponents = ConsiderExponentiations ? exponents : new double[] { 1 };
@@ -244,6 +289,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                     foreach (OpCode _op in validFuncs) {
                         var inner_data = data.Select(x => eval(_op, x)).ToArray();
                         if (!ok(inner_data)) continue;
+                        // the name is for later parsing the Basis Functions to an ISymbolicExpressionTree
                         var inner_name = OpCodeToString.GetByFirst(_op) + "(" + name + ")";
                         B1.Add(new BasisFunction(inner_name, inner_data, true));
                     }
@@ -252,7 +298,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             return B1;
         }
 
-        private static List<BasisFunction> createMultivariateBases(List<BasisFunction> B1) {
+        // returns a new List of Basis Functions which also include interactions
+        private static IEnumerable<BasisFunction> CreateMultivariateBases(IEnumerable<BasisFunction> B1) {
             var B2 = new List<BasisFunction>();
             for (int i = 0; i < B1.Count(); i++) {
                 var b_i = B1.ElementAt(i);
@@ -263,19 +310,18 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                     B2.Add(b_inter);
                 }
             }
-
-            return B2;
+            return B1.Concat(B2);
         }
 
         // creates 1 denominator basis function for each corresponding basis function from basisFunctions
-        private IEnumerable<BasisFunction> createDenominatorBases(IRegressionProblemData problemData, IEnumerable<BasisFunction> basisFunctions) {
+        private IEnumerable<BasisFunction> CreateDenominatorBases(IRegressionProblemData problemData, IEnumerable<BasisFunction> basisFunctions) {
             var y = new BasisFunction(problemData.TargetVariable, problemData.TargetVariableValues.ToArray(), false);
             var denomBasisFuncs = new List<BasisFunction>();
             foreach (var func in basisFunctions) {
                 var denomFunc = y * func;
                 denomBasisFuncs.Add(denomFunc);
             }
-            return denomBasisFuncs;
+            return denomBasisFuncs.Concat(basisFunctions);
         }
 
         private static string expToString(double exponent, string varname) {
@@ -305,20 +351,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         public static IEnumerable<double> logspace(double start, double end, int count) {
             double d = (double)count, p = end / start;
             return Enumerable.Range(0, count).Select(i => start * Math.Pow(p, i / d));
-        }
-
-        // Uses ElasticNet Linear Regression to find best coefficients along the path of different lambdas
-        // Results: Coefficient Graph, NMSE Graph, a set of ALL generated models, the final pareto-front of those models
-        private void LearnModels(IRegressionProblemData problemData, List<BasisFunction> basisFunctions, out double[] lambda, out double[,] coeff, out double[] trainNMSE, out double[] testNMSE, out double[] intercept) {
-            int numNominatorBases = ConsiderDenominations ? basisFunctions.Count / 2 : basisFunctions.Count;
-            //IDictionary<int, ISymbolicRegressionSolution> paretoFront = new Dictionary<int, ISymbolicRegressionSolution>();
-
-            // wraps the list of basis functions in a dataset, so that it can be passed on to the ElNet function
-            var X_b = createProblemData(problemData, basisFunctions);
-
-            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity, MaxNumBasisFuncs);
-
-            
         }
 
         // returns all row indices of the models in coeffs that are supposed to be in the pareto front
@@ -383,6 +415,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                     dataRows[i] = new IndexedDataRow<double>(doubleVariable, doubleVariable, path);
                     i++;
                 }
+
                 // add to coeffTable by total weight (larger area under the curve => more important);
                 foreach (var r in dataRows.OrderByDescending(r => r.Values.Select(t => t.Item2).Sum(x => Math.Abs(x)))) {
                     coeffTable.Rows.Add(r);
@@ -458,7 +491,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 // only generate nodes for relevant basis functions (those with non-zero coeffs)
                 if (coeffs[i] != 0)
                     if (coeffs[i] > 0)
-                        model += " + (" + coeffs[i].ToString(culture) + ") * '" + func.Var + "'"; 
+                        model += " + (" + coeffs[i].ToString(culture) + ") * '" + func.Var + "'";
                     else
                         model += " - (" + (-coeffs[i]).ToString(culture) + ") * '" + func.Var + "'";
             }
@@ -479,7 +512,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         }
 
         // wraps the list of basis functions into an IRegressionProblemData object
-        private static IRegressionProblemData createProblemData(IRegressionProblemData problemData, List<BasisFunction> basisFunctions) {
+        private static IRegressionProblemData PrepareData(IRegressionProblemData problemData, List<BasisFunction> basisFunctions) {
             HashSet<string> variableNames = new HashSet<string>();
             List<IList> variableVals = new List<IList>();
             foreach (var basisFunc in basisFunctions) {
