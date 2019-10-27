@@ -188,7 +188,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
             // this is the first iteration (only with the univariate bases)
             // for the purpose of optimization, only the most important sqrt(n) basis functions are to be selected for the CreateMultivariableBases step (see paper)
-            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity, MaxNumBasisFuncs);
+            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity);
 
             IEnumerable<BasisFunction> relevantFuncs = FilterCoeffs(univariateBases, coeff);
 
@@ -208,7 +208,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             ));
 
             // "real" iteration with all Basis Functions in X_b
-            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity, MaxNumBasisFuncs);
+            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity);
 
             if (Verbose) {
                 var errorTable = NMSEGraph(coeff, lambda, trainNMSE, testNMSE);
@@ -263,14 +263,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 i++;
             }
             return solution;
-        }
-
-        private List<BasisFunction> createBasisFunctions(IRegressionProblemData problemData) {
-            var basisFunctions = CreateUnivariateBases(problemData);
-
-            if (ConsiderInteractions)
-                basisFunctions = basisFunctions.Concat(CreateMultivariateBases(basisFunctions)).ToList();
-            return basisFunctions;
         }
 
         private List<BasisFunction> CreateUnivariateBases(IRegressionProblemData problemData) {
