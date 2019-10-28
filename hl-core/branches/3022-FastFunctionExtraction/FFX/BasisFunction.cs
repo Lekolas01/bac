@@ -11,8 +11,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction
 
     struct BasisFunction
     {
-        public string Var { get; set; }     // e.g. "Abs(Column1 ** 2)"
-        public double[] Val { get; set; }   // this holds the already calculated values, i.e. the function written in Var
+        public string Var { get; set; }     // e.g. "LOG(Feature1 ** 2)"
+        public double[] Val { get; set; }   // this holds the already calculated values, i.e. the value of the function written in Var
         public bool IsOperator { get; set; }// ffx needs to check if basis function has an operator, as it ignores interactions between two nonlinear functions (too complex)
         public NonlinOp Operator { get; }
 

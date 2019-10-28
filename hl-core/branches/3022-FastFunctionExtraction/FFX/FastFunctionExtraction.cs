@@ -53,6 +53,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         private const string LambdaParameterName = "Lambda";
         private const string MaxNumBasisFuncsParameterName = "Maximum Number of Basis Functions";
         private const string VerboseParameterName = "Verbose";
+        private const string WriteIntoFileParameterName = "WriteIntoFile";
 
         #region parameters
         public IValueParameter<BoolValue> ConsiderInteractionsParameter {
@@ -82,9 +83,11 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         public IValueParameter<IntValue> MaxNumBasisFuncsParameter {
             get { return (IValueParameter<IntValue>)Parameters[MaxNumBasisFuncsParameterName]; }
         }
-
         public IValueParameter<BoolValue> VerboseParameter {
             get { return (IValueParameter<BoolValue>)Parameters[VerboseParameterName]; }
+        }
+        public IValueParameter<BoolValue> WriteIntoFileParameter {
+            get { return (IValueParameter<BoolValue>)Parameters[WriteIntoFileParameterName]; }
         }
 
         #endregion
@@ -126,10 +129,13 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             get { return MaxNumBasisFuncsParameter.Value.Value; }
             set { MaxNumBasisFuncsParameter.Value.Value = value; }
         }
-
         public bool Verbose {
             get { return VerboseParameter.Value.Value; }
             set { VerboseParameter.Value.Value = value; }
+        }
+        public bool WriteIntoFile {
+            get { return WriteIntoFileParameter.Value.Value; }
+            set { WriteIntoFileParameter.Value.Value = value; }
         }
         #endregion
 
@@ -153,6 +159,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             Parameters.Add(new ValueParameter<CheckedItemCollection<EnumValue<OpCode>>>(NonlinearFuncsParameterName, "What nonlinear functions the models should be able to include.", items));
             Parameters.Add(new ValueParameter<IntValue>(MaxNumBasisFuncsParameterName, "Maximum Number of Basis Functions in the final models.", new IntValue(15)));
             Parameters.Add(new ValueParameter<BoolValue>(VerboseParameterName, "Verbose?", new BoolValue(false)));
+            Parameters.Add(new ValueParameter<BoolValue>(WriteIntoFileParameterName, "The path where you want the program to write the results. If empty, it doesn't write anywhere", new BoolValue(false)));
         }
 
         [StorableHook(HookType.AfterDeserialization)]
@@ -222,16 +229,22 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 var coeffs = GetRow(coeff, modelIdx);
                 var tree = Tree(relevantFuncs, coeffs, intercept[modelIdx]);
                 ISymbolicRegressionModel m = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeInterpreter());
-                //ISymbolicRegressionSolution s = new SymbolicRegressionSolution(m, Problem.ProblemData);
-                bool withDenom(double[] coeffarr) => coeffarr.Take(coeffarr.Length / 2).ToArray().Any(val => !val.IsAlmost(0.0));
                 models.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), m));
             }
 
+            // calculate the pareto front
             int complexity(double[] modelCoeffs) => modelCoeffs.Count(val => val != 0);
             var paretoFront = getParetoFront<IResult>(models.ToArray(), coeff, trainNMSE, complexity);
 
             if (Verbose) Results.Add(new Result("Models", "The mode l path returned by the Elastic Net Regression (not only the pareto-optimal subset). ", models));
             Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", new ItemCollection<IResult>(paretoFront)));
+
+
+
+        }
+
+        private void SaveError(string log) {
+            throw new NotImplementedException();
         }
 
         /* selects the sqrt(n) most important basis functions
