@@ -144,7 +144,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             }
             base.Problem = new RegressionProblem();
             Parameters.Add(new ValueParameter<BoolValue>(ConsiderInteractionsParameterName, "True if you want the models to include interactions, otherwise false.", new BoolValue(true)));
-            Parameters.Add(new ValueParameter<BoolValue>(ConsiderDenominationParameterName, "True if you want the models to include denominations, otherwise false.", new BoolValue(false)));
+            Parameters.Add(new ValueParameter<BoolValue>(ConsiderDenominationParameterName, "True if you want the models to include denominations, otherwise false.", new BoolValue(true)));
             Parameters.Add(new ValueParameter<BoolValue>(ConsiderExponentiationParameterName, "True if you want the models to include exponentiation, otherwise false.", new BoolValue(true)));
             Parameters.Add(new ValueParameter<BoolValue>(ConsiderNonlinearFuncsParameterName, "True if you want the models to include nonlinear functions(abs, log,...), otherwise false.", new BoolValue(true)));
             Parameters.Add(new ValueParameter<BoolValue>(ConsiderHingeFuncsParameterName, "True if you want the models to include Hinge Functions, otherwise false.", new BoolValue(false)));
@@ -188,7 +188,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
             // this is the first iteration (only with the univariate bases)
             // for the purpose of optimization, only the most important sqrt(n) basis functions are to be selected for the CreateMultivariableBases step (see paper)
-            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity);
+            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept);
 
             IEnumerable<BasisFunction> relevantFuncs = FilterCoeffs(univariateBases, coeff);
 
@@ -199,7 +199,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             // add denominator bases to the already existing basis functions
             if (ConsiderDenominations) relevantFuncs = CreateDenominatorBases(Problem.ProblemData, relevantFuncs);
 
-            X_b = PrepareData(Problem.ProblemData, univariateBases);
+            X_b = PrepareData(Problem.ProblemData, relevantFuncs);
 
             if (Verbose) Results.Add(new Result(
               "Final Basis Functions",
@@ -220,7 +220,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             ItemCollection<IResult> models = new ItemCollection<IResult>();
             for (int modelIdx = 0; modelIdx < coeff.GetUpperBound(0); modelIdx++) {
                 var coeffs = GetRow(coeff, modelIdx);
-                var tree = Tree(univariateBases, coeffs, intercept[modelIdx]);
+                var tree = Tree(relevantFuncs, coeffs, intercept[modelIdx]);
                 ISymbolicRegressionModel m = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeInterpreter());
                 //ISymbolicRegressionSolution s = new SymbolicRegressionSolution(m, Problem.ProblemData);
                 bool withDenom(double[] coeffarr) => coeffarr.Take(coeffarr.Length / 2).ToArray().Any(val => !val.IsAlmost(0.0));
@@ -467,44 +467,38 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
          * Creates an ISymbolicExpressionTree out of the list of a model
          * It does so by creating a string which will then get parsed by the InfixExpressionParser
          */
-        private ISymbolicExpressionTree Tree(List<BasisFunction> basisFunctions, double[] coeffs, double offset) {
-            Debug.Assert(basisFunctions.Count() == coeffs.Length);
+        private ISymbolicExpressionTree Tree(IEnumerable<BasisFunction> basisFunctions, double[] coeffs, double offset) {
+            if (basisFunctions.Count(val => true) != coeffs.Length) throw new Exception("This should be unreachable code.");
             var culture = new CultureInfo("en-US");
             var numNumeratorFuncs = ConsiderDenominations ? basisFunctions.Count() / 2 : basisFunctions.Count();
-            // the first half are the numerator basis funcs, the second half the denominator basis funcs
-            var numeratorFuncs = basisFunctions.Take(numNumeratorFuncs);
 
-            // returns true if there exists at least 1 coefficient value in the model that is part of the denominator 
+            // true if there exists at least 1 coefficient value in the model that is part of the denominator 
             // (i.e. if there exists at least 1 non-zero value in the second half of the array)
-            bool withDenom(double[] coeffarr) => coeffarr.Take(coeffarr.Length / 2).ToArray().Any(val => !val.IsAlmost(0.0));
-            string model = "" + offset.ToString(culture);
+            bool withDenom = coeffs.OrderByDescending(val => val).Take(coeffs.Length / 2).ToArray().Any(val => !val.IsAlmost(0.0));
+            string model = "(" + offset.ToString(culture);
             for (int i = 0; i < numNumeratorFuncs; i++) {
                 var func = basisFunctions.ElementAt(i);
                 // only generate nodes for relevant basis functions (those with non-zero coeffs)
                 if (coeffs[i] != 0)
-                    if (coeffs[i] > 0)
-                        model += " + (" + coeffs[i].ToString(culture) + ") * " + func.Var;
-                    else
-                        model += " - (" + (-coeffs[i]).ToString(culture) + ") * " + func.Var;
+                    model += " + (" + coeffs[i].ToString(culture) + ") * '" + func.Var + "'";
             }
-            if (ConsiderDenominations && withDenom(coeffs)) {
+            if (ConsiderDenominations && withDenom) {
                 model += ") / (1";
                 for (int i = numNumeratorFuncs; i < basisFunctions.Count(); i++) {
                     var func = basisFunctions.ElementAt(i);
                     // only generate nodes for relevant basis functions (those with non-zero coeffs)
                     if (coeffs[i] != 0)
-                        model += " + " + coeffs[i] + " * " + func.Var.Substring(4);
+                        model += " + (" + coeffs[i].ToString(culture) + ") * '" + func.Var + "'";
                 }
             }
-            model += "";
+            model += ")";
             InfixExpressionParser p = new InfixExpressionParser();
-
 
             return p.Parse(model);
         }
 
         // wraps the list of basis functions into an IRegressionProblemData object
-        private static IRegressionProblemData PrepareData(IRegressionProblemData problemData, List<BasisFunction> basisFunctions) {
+        private static IRegressionProblemData PrepareData(IRegressionProblemData problemData, IEnumerable<BasisFunction> basisFunctions) {
             HashSet<string> variableNames = new HashSet<string>();
             List<IList> variableVals = new List<IList>();
             foreach (var basisFunc in basisFunctions) {

@@ -41,6 +41,10 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction
         {
             return null;
         }
-        
+
+        public override string ToString() {
+            return this.Var;
+        }
+
     }
 }
