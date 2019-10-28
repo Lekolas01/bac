@@ -1,0 +1,49 @@
+// use 'vars' to access variables in the script's variable store (e.g. vars.x = 5)
+// use 'vars[string]' to access variables via runtime strings (e.g. vars["x"] = 5)
+// use 'vars.Contains(string)' to check if a variable exists
+// use 'vars.Clear()' to remove all variables
+// use 'foreach (KeyValuePair<string, object> v in vars) { ... }' to iterate over all variables
+// use 'variables' to work with IEnumerable<T> extension methods on the script's variable store
+
+using System;
+using System.Linq;
+using System.Collections.Generic;
+
+using HeuristicLab.Core;
+using HeuristicLab.Common;
+//using HeuristicLab.Collections;
+//using HeuristicLab.Data;
+using HeuristicLab.Problems.Instances.DataAnalysis;
+using System.IO;
+
+public class MyScript : HeuristicLab.Scripting.CSharpScriptBase {
+  public override void Main() {
+      var provider = new PhysicsInstanceProvider();
+      var count = 0;
+      foreach(var descriptor in provider.GetDataDescriptors()) {
+        var problemData = provider.LoadData(descriptor);
+        var path = "C:/repo/Bachelorarbeit/hl-core/branches/3022-FastFunctionExtraction/data/_" + count + "_.csv";
+        Console.Write(path);
+        provider.ExportData(problemData, path);
+        count++;
+        
+        var ds = problemData.Dataset;
+        
+        using (var sw = new StreamWriter(path))
+          {
+        for (int i =0; i <ds.Rows; ++i)
+          {
+          var variables = ds.DoubleVariables.ToList();
+          
+          for (int j = 0; j < ds.Columns; ++j)
+            {
+                                             sw.Write(ds.GetDoubleValue(variables[j], i).ToString() + ";");
+          }
+          sw.WriteLine();
+          }
+        }
+      }
+
+  // implement further classes and methods
+  }
+}

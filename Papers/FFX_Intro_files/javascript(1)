@@ -1,0 +1,6 @@
+(function() {
+	OCA.Accessibility = {
+		theme: false,
+		
+	};
+})();
