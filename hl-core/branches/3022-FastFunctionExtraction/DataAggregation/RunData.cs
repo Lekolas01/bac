@@ -17,5 +17,11 @@ namespace DataAggregation {
             this.test_mae = test_mae;
             this.runtime = runtime;
         }
+
+        internal int CompareTo(RunData value) {
+            if (test_mse < value.test_mse) return -1;
+            else if (test_mse == value.test_mse) return 0;
+            return 1;
+        }
     }
 }
