@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace DataAggregation {
+namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
     struct RunData {
         public double train_mse { get; set; }
         public double train_mae { get; set; }

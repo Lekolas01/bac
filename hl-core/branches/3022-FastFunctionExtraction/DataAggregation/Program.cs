@@ -6,27 +6,42 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 
-namespace DataAggregation {
+namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
     class Program {
+        private static CultureInfo culture = new CultureInfo("en-US");
+
+        delegate int CompareRun(RunData r1, RunData r2);
+
 
 
         public static bool StringArrToRunData(string[] arr, out RunData data) {
             double train_mse, train_mae, test_mse, test_mae, runtime;
             data = new RunData();
-            if (!Double.TryParse(arr[4], /*NumberStyles.AllowDecimalPoint, null,*/ out train_mse)) return false;
-            if (!Double.TryParse(arr[5], /*NumberStyles.AllowDecimalPoint, null,*/ out train_mae)) return false;
-            if (!Double.TryParse(arr[6], /*NumberStyles.AllowDecimalPoint, null,*/ out test_mse)) return false;
-            if (!Double.TryParse(arr[7], /*NumberStyles.AllowDecimalPoint, null,*/ out test_mae)) return false;
-            if (!Double.TryParse(arr[8], /*NumberStyles.AllowDecimalPoint, null,*/ out runtime)) return false;
+            if (!Double.TryParse(arr[4], NumberStyles.AllowDecimalPoint, culture, out train_mse)) return false;
+            if (!Double.TryParse(arr[5], NumberStyles.AllowDecimalPoint, culture, out train_mae)) return false;
+            if (!Double.TryParse(arr[6], NumberStyles.AllowDecimalPoint, culture, out test_mse)) return false;
+            if (!Double.TryParse(arr[7], NumberStyles.AllowDecimalPoint, culture, out test_mae)) return false;
+            if (!Double.TryParse(arr[8], NumberStyles.AllowDecimalPoint, culture, out runtime)) return false;
             data = new RunData(train_mse, train_mae, test_mse, test_mae, runtime);
             return true;
         }
 
         static void Main(string[] args) {
-            var scores = CompareAlgs();
+            int[,] errorAlgs, runtimeAlgs;
+            string[] errorAlgNames, runtimeAlgNames;
+            CompareAlgs(delegate (RunData r1, RunData r2) {
+                if (r1.test_mse < r2.test_mse) return -1;
+                else if (r1.test_mse == r2.test_mse) return 0;
+                return 1;
+            }, out errorAlgs, out errorAlgNames);
+            CompareAlgs(delegate (RunData r1, RunData r2) {
+                if (r1.test_mse < r2.test_mse) return -1;
+                else if (r1.test_mse == r2.test_mse) return 0;
+                return 1;
+            }, out runtimeAlgs, out runtimeAlgNames);
         }
 
-        private static int[,] CompareAlgs() {
+        private static void CompareAlgs(Comparison<RunData> cr, out int[,] alg_scores, out string[] algorithmNames) {
             Dictionary<string, int> algs = new Dictionary<string, int>();
             int numAlgs = 0;
 
@@ -37,32 +52,32 @@ namespace DataAggregation {
                 string problem_name = values[0];
                 string alg_name = values[1];
 
-
                 RunData runData;
-                if (!StringArrToRunData(values, out runData)) continue;
+                if (!StringArrToRunData(values, out runData)) continue; // unparsable lines are supposed to be ignored
                 if (!algs.ContainsKey(alg_name)) {
                     algs.Add(alg_name, numAlgs);
                     numAlgs++;
                 }
-                if (!data_dic.ContainsKey(problem_name)) {
-                    data_dic[problem_name] = new Dictionary<string, RunData>();
-                }
+                if (!data_dic.ContainsKey(problem_name)) data_dic[problem_name] = new Dictionary<string, RunData>();
                 if (!data_dic[problem_name].ContainsKey(alg_name) || data_dic[problem_name][alg_name].test_mse > runData.test_mse) data_dic[problem_name][alg_name] = runData;
             }
 
-            int numProblems = data_dic.Count;
-            int[,] alg_scores = new int[numAlgs, numAlgs];
+            alg_scores = new int[numAlgs, numAlgs];
+            algorithmNames = new string[numAlgs];
             int i = 0;
+            foreach(var alg in algs) {
+                algorithmNames[i] = alg.Key;
+                i++;
+            }
             foreach (var problem in data_dic) {
                 var myList = problem.Value.ToList();
-                myList.Sort((pair1, pair2) => pair1.Value.CompareTo(pair2.Value));
+                myList.Sort((val1, val2) => val1.Value.CompareTo(val2.Value));
                 int j = 0;
                 foreach (var alg in myList) {
                     alg_scores[algs[alg.Key], j]++;
                     j++;
                 }
             }
-            return alg_scores;
         }
     }
 }
