@@ -8,11 +8,8 @@ using System.Linq;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
     class Program {
+
         private static CultureInfo culture = new CultureInfo("en-US");
-
-        delegate int CompareRun(RunData r1, RunData r2);
-
-
 
         public static bool StringArrToRunData(string[] arr, out RunData data) {
             double train_mse, train_mae, test_mse, test_mae, runtime;
@@ -29,19 +26,19 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         static void Main(string[] args) {
             int[,] errorAlgs, runtimeAlgs;
             string[] errorAlgNames, runtimeAlgNames;
-            CompareAlgs(delegate (RunData r1, RunData r2) {
-                if (r1.test_mse < r2.test_mse) return -1;
-                else if (r1.test_mse == r2.test_mse) return 0;
+            CompareAlgs(delegate(KeyValuePair<string, RunData> val1, KeyValuePair<string, RunData> val2) {
+                if (val1.Value.test_mse < val2.Value.test_mse) return -1;
+                else if (val1.Value.test_mse == val2.Value.test_mse) return 0;
                 return 1;
             }, out errorAlgs, out errorAlgNames);
-            CompareAlgs(delegate (RunData r1, RunData r2) {
-                if (r1.test_mse < r2.test_mse) return -1;
-                else if (r1.test_mse == r2.test_mse) return 0;
+            CompareAlgs(delegate (KeyValuePair<string, RunData> val1, KeyValuePair<string, RunData> val2) {
+                if (val1.Value.runtime < val2.Value.runtime) return -1;
+                else if (val1.Value.runtime == val2.Value.runtime) return 0;
                 return 1;
-            }, out runtimeAlgs, out runtimeAlgNames);
+            }, out errorAlgs, out errorAlgNames);
         }
 
-        private static void CompareAlgs(Comparison<RunData> cr, out int[,] alg_scores, out string[] algorithmNames) {
+        private static void CompareAlgs(Comparison<KeyValuePair<string, RunData>> cr, out int[,] alg_scores, out string[] algorithmNames) {
             Dictionary<string, int> algs = new Dictionary<string, int>();
             int numAlgs = 0;
 
@@ -70,9 +67,9 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 i++;
             }
             foreach (var problem in data_dic) {
-                var myList = problem.Value.ToList();
-                myList.Sort((val1, val2) => val1.Value.CompareTo(val2.Value));
                 int j = 0;
+                var myList = problem.Value.ToList();
+                myList.Sort(cr);
                 foreach (var alg in myList) {
                     alg_scores[algs[alg.Key], j]++;
                     j++;
