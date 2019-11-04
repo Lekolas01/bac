@@ -35,7 +35,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 if (val1.Value.runtime < val2.Value.runtime) return -1;
                 else if (val1.Value.runtime == val2.Value.runtime) return 0;
                 return 1;
-            }, out errorAlgs, out errorAlgNames);
+            }, out runtimeAlgs, out runtimeAlgNames);
         }
 
         private static void CompareAlgs(Comparison<KeyValuePair<string, RunData>> cr, out int[,] alg_scores, out string[] algorithmNames) {
