@@ -1,26 +1,24 @@
 ﻿using System;
 using System.Threading;
 using System.Linq;
-using HeuristicLab.Common; // required for parameters collection
-using HeuristicLab.Core; // required for parameters collection
-using HeuristicLab.Data; // IntValue, ...
-using HeuristicLab.Encodings.BinaryVectorEncoding;
-using HeuristicLab.Optimization; // BasicAlgorithm
+using HeuristicLab.Common;
+using HeuristicLab.Core;
+using HeuristicLab.Data;
+using HeuristicLab.Optimization;
 using HeuristicLab.Parameters;
-using HeuristicLab.Problems.Binary;
-using HeuristicLab.Random; // MersenneTwister
 using HEAL.Attic;
 using HeuristicLab.Algorithms.DataAnalysis.Glmnet;
 using HeuristicLab.Problems.DataAnalysis;
 using System.Collections.Generic;
 using HeuristicLab.Encodings.SymbolicExpressionTreeEncoding;
 using System.Collections;
-using System.Diagnostics;
 using HeuristicLab.Problems.DataAnalysis.Symbolic;
 using HeuristicLab.Problems.DataAnalysis.Symbolic.Regression;
 using HeuristicLab.Analysis;
 using HeuristicLab.Collections;
 using System.Globalization;
+using System.IO;
+using System.Diagnostics;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
@@ -33,15 +31,15 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         private static readonly OpCode[] nonlinFuncs = { OpCode.Absolute, OpCode.Log, OpCode.Sin, OpCode.Cos };
 
         private static readonly BidirectionalDictionary<OpCode, string> OpCodeToString = new BidirectionalDictionary<OpCode, string> {
-        { OpCode.Log, "LOG" },
-        { OpCode.Absolute, "ABS"},
-        { OpCode.Sin, "SIN"},
-        { OpCode.Cos, "COS"},
-        { OpCode.Square, "SQR"},
-        { OpCode.SquareRoot, "SQRT"},
-        { OpCode.Cube, "CUBE"},
-        { OpCode.CubeRoot, "CUBEROOT"}
-    };
+            { OpCode.Log, "LOG" },
+            { OpCode.Absolute, "ABS"},
+            { OpCode.Sin, "SIN"},
+            { OpCode.Cos, "COS"},
+            { OpCode.Square, "SQR"},
+            { OpCode.SquareRoot, "SQRT"},
+            { OpCode.Cube, "CUBE"},
+            { OpCode.CubeRoot, "CUBEROOT"}
+        };
 
         private const string ConsiderInteractionsParameterName = "Consider Interactions";
         private const string ConsiderDenominationParameterName = "Consider Denomination";
@@ -53,7 +51,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         private const string LambdaParameterName = "Lambda";
         private const string MaxNumBasisFuncsParameterName = "Maximum Number of Basis Functions";
         private const string VerboseParameterName = "Verbose";
-        private const string WriteIntoFileParameterName = "WriteIntoFile";
+        private const string FilePathParameterName = "FilePath";
 
         #region parameters
         public IValueParameter<BoolValue> ConsiderInteractionsParameter {
@@ -86,8 +84,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         public IValueParameter<BoolValue> VerboseParameter {
             get { return (IValueParameter<BoolValue>)Parameters[VerboseParameterName]; }
         }
-        public IValueParameter<BoolValue> WriteIntoFileParameter {
-            get { return (IValueParameter<BoolValue>)Parameters[WriteIntoFileParameterName]; }
+        public IValueParameter<StringValue> FilePathParameter {
+            get { return (IValueParameter<StringValue>)Parameters[FilePathParameterName]; }
         }
 
         #endregion
@@ -133,9 +131,9 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             get { return VerboseParameter.Value.Value; }
             set { VerboseParameter.Value.Value = value; }
         }
-        public bool WriteIntoFile {
-            get { return WriteIntoFileParameter.Value.Value; }
-            set { WriteIntoFileParameter.Value.Value = value; }
+        public string FilePath {
+            get { return FilePathParameter.Value.Value; }
+            set { FilePathParameter.Value.Value = value; }
         }
         #endregion
 
@@ -159,7 +157,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             Parameters.Add(new ValueParameter<CheckedItemCollection<EnumValue<OpCode>>>(NonlinearFuncsParameterName, "What nonlinear functions the models should be able to include.", items));
             Parameters.Add(new ValueParameter<IntValue>(MaxNumBasisFuncsParameterName, "Maximum Number of Basis Functions in the final models.", new IntValue(15)));
             Parameters.Add(new ValueParameter<BoolValue>(VerboseParameterName, "Verbose?", new BoolValue(false)));
-            Parameters.Add(new ValueParameter<BoolValue>(WriteIntoFileParameterName, "The path where you want the program to write the results. If empty, it doesn't write anywhere", new BoolValue(false)));
+            Parameters.Add(new ValueParameter<StringValue>(FilePathParameterName, "The path where you want the program to write the results. If left empty, the result doesn't get written anywhere.", new StringValue(@"D:\LukaLeko\SourceTest\Repos\bachelorarbeit\doc\all_results.csv.txt")));
         }
 
         [StorableHook(HookType.AfterDeserialization)]
@@ -174,7 +172,10 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
         public override bool SupportsPause { get { return true; } }
 
+
         protected override void Run(CancellationToken cancellationToken) {
+            Stopwatch stopwatch = Stopwatch.StartNew();
+
             double[] lambda;
             double[,] coeff;
             double[] trainNMSE;
@@ -182,6 +183,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             double[] intercept;
             var univariateBases = CreateUnivariateBases(Problem.ProblemData);
 
+            // wraps the list of basis functions in a dataset, so that it can be passed on to the ElNet function
             var X_b = PrepareData(Problem.ProblemData, univariateBases);
 
             if (Verbose) Results.Add(new Result(
@@ -190,11 +192,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
               X_b
             ));
 
-            // wraps the list of basis functions in a dataset, so that it can be passed on to the ElNet function
-
-
             // this is the first iteration (only with the univariate bases)
-            // for the purpose of optimization, only the most important sqrt(n) basis functions are to be selected for the CreateMultivariableBases step (see paper)
+            // for the purpose of efficiency, only the "most important" sqrt(n) basis functions are to be selected for the merge of multivariate bases (see FFX paper)
             ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept);
 
             IEnumerable<BasisFunction> relevantFuncs = FilterCoeffs(univariateBases, coeff);
@@ -223,6 +222,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 var coeffTable = CoefficientGraph(coeff, lambda, X_b.AllowedInputVariables, X_b.Dataset);
                 Results.Add(new Result(coeffTable.Name, coeffTable.Description, coeffTable));
             }
+            stopwatch.Stop();
 
             ItemCollection<IResult> models = new ItemCollection<IResult>();
             for (int modelIdx = 0; modelIdx < coeff.GetUpperBound(0); modelIdx++) {
@@ -230,6 +230,24 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 var tree = Tree(relevantFuncs, coeffs, intercept[modelIdx]);
                 ISymbolicRegressionModel m = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeInterpreter());
                 models.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), m));
+
+                char seperator = ';'; 
+
+                if (FilePath != "" && modelIdx == coeff.GetUpperBound(0) - 1) {
+                    // write out the accuracy of the most precise function into a log file
+                    IRegressionSolution newSolution = new RegressionSolution(m, Problem.ProblemData);
+                    
+                    string outputStr = Problem.ProblemData.Name;
+                    outputStr += seperator + "ffx";
+                    outputStr += seperator + "0.0";
+                    outputStr += seperator + "[]";
+                    outputStr += seperator + newSolution.TrainingMeanSquaredError.ToString(new CultureInfo("en-US"));
+                    outputStr += seperator + newSolution.TrainingMeanAbsoluteError.ToString(new CultureInfo("en-US"));
+                    outputStr += seperator + newSolution.TestMeanSquaredError.ToString(new CultureInfo("en-US"));
+                    outputStr += seperator + newSolution.TestMeanAbsoluteError.ToString(new CultureInfo("en-US"));
+                    outputStr += seperator + (stopwatch.ElapsedMilliseconds / 1000.0).ToString(new CultureInfo("en-US"));
+                    File.AppendAllText(FilePath, outputStr + Environment.NewLine);
+                }
             }
 
             // calculate the pareto front
@@ -239,17 +257,13 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             if (Verbose) Results.Add(new Result("Models", "The mode l path returned by the Elastic Net Regression (not only the pareto-optimal subset). ", models));
             Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", new ItemCollection<IResult>(paretoFront)));
 
-
-
         }
 
         private void SaveError(string log) {
             throw new NotImplementedException();
         }
 
-        /* selects the sqrt(n) most important basis functions
-         * this if for the sole purpose of runtime
-         */
+        /* selects the sqrt(n) most important basis functions */
         private static IEnumerable<BasisFunction> FilterCoeffs(IEnumerable<BasisFunction> univariateBases, double[,] coeff) {
             List<BasisFunction> solution = new List<BasisFunction>();
             int nlambdas = coeff.GetLength(0);
@@ -335,7 +349,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             if (exponent.IsAlmost((double)1 / 3)) return OpCodeToString.GetByFirst(OpCode.CubeRoot) + "(" + varname + ")";
             if (exponent.IsAlmost(2)) return OpCodeToString.GetByFirst(OpCode.Square) + "(" + varname + ")";
             if (exponent.IsAlmost(3)) return OpCodeToString.GetByFirst(OpCode.Cube) + "(" + varname + ")";
-            else return varname + " ^ " + exponent;
+            else return "'" + varname + "' ^ " + exponent;
         }
 
         public static double eval(OpCode op, double x) {
@@ -493,7 +507,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 var func = basisFunctions.ElementAt(i);
                 // only generate nodes for relevant basis functions (those with non-zero coeffs)
                 if (coeffs[i] != 0)
-                    model += " + (" + coeffs[i].ToString(culture) + ") * '" + func.Var + "'";
+                    model += " + (" + coeffs[i].ToString(culture) + ") * " + func.Var;
             }
             if (ConsiderDenominations && withDenom) {
                 model += ") / (1";
@@ -501,7 +515,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                     var func = basisFunctions.ElementAt(i);
                     // only generate nodes for relevant basis functions (those with non-zero coeffs)
                     if (coeffs[i] != 0)
-                        model += " + (" + coeffs[i].ToString(culture) + ") * '" + func.Var + "'";
+                        model += " + (" + coeffs[i].ToString(culture) + ") * " + func.Var;
                 }
             }
             model += ")";
@@ -516,7 +530,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             List<IList> variableVals = new List<IList>();
             foreach (var basisFunc in basisFunctions) {
                 variableNames.Add(basisFunc.Var);
-                // basisFunctions already contains the calculated values of the corresponding basis function, so you can just take that value 
                 variableVals.Add(new List<double>(basisFunc.Val));
             }
             var matrix = new ModifiableDataset(variableNames, variableVals);
@@ -534,12 +547,12 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
         private static bool ok(double[] data) => data.All(x => !double.IsNaN(x) && !double.IsInfinity(x));
 
-        // helper function which returns a row of a 2D array
-        private static T[] GetRow<T>(T[,] matrix, int row) {
+        // return the nth row of the matrix
+        private static T[] GetRow<T>(T[,] matrix, int n) {
             var columns = matrix.GetLength(1);
             var array = new T[columns];
             for (int i = 0; i < columns; ++i)
-                array[i] = matrix[row, i];
+                array[i] = matrix[n, i];
             return array;
         }
     }
