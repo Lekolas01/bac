@@ -231,21 +231,23 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 ISymbolicRegressionModel m = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeInterpreter());
                 models.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), m));
 
-                char seperator = ';'; 
+                char seperator = ';';
+                CultureInfo culture = new CultureInfo("en-US");
 
                 if (FilePath != "" && modelIdx == coeff.GetUpperBound(0) - 1) {
                     // write out the accuracy of the most precise function into a log file
                     IRegressionSolution newSolution = new RegressionSolution(m, Problem.ProblemData);
+                    Results.Add(new Result( "Solution", newSolution));
                     
                     string outputStr = Problem.ProblemData.Name;
                     outputStr += seperator + "ffx";
                     outputStr += seperator + "0.0";
                     outputStr += seperator + "[]";
-                    outputStr += seperator + newSolution.TrainingMeanSquaredError.ToString(new CultureInfo("en-US"));
-                    outputStr += seperator + newSolution.TrainingMeanAbsoluteError.ToString(new CultureInfo("en-US"));
-                    outputStr += seperator + newSolution.TestMeanSquaredError.ToString(new CultureInfo("en-US"));
-                    outputStr += seperator + newSolution.TestMeanAbsoluteError.ToString(new CultureInfo("en-US"));
-                    outputStr += seperator + (stopwatch.ElapsedMilliseconds / 1000.0).ToString(new CultureInfo("en-US"));
+                    outputStr += seperator + newSolution.TrainingMeanSquaredError.ToString(culture);
+                    outputStr += seperator + newSolution.TrainingMeanAbsoluteError.ToString(culture);
+                    outputStr += seperator + newSolution.TestMeanSquaredError.ToString(culture);
+                    outputStr += seperator + newSolution.TestMeanAbsoluteError.ToString(culture);
+                    outputStr += seperator + (stopwatch.ElapsedMilliseconds / 1000.0).ToString(culture);
                     File.AppendAllText(FilePath, outputStr + Environment.NewLine);
                 }
             }
