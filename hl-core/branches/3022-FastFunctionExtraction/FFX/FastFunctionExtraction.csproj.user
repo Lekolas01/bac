@@ -2,6 +2,6 @@
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
     <StartAction>Program</StartAction>
-    <StartProgram>D:\LukaLeko\SourceTest\Repos\bachelorarbeit\hl-core\trunk\bin\HeuristicLab 3.3.exe.exe</StartProgram>
+    <StartProgram>D:\LukaLeko\SourceTest\Repos\bachelorarbeit\src\hl-core\trunk\bin\HeuristicLab 3.3.exe</StartProgram>
   </PropertyGroup>
 </Project>

@@ -170,9 +170,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         public override Type ProblemType { get { return typeof(RegressionProblem); } }
         public new RegressionProblem Problem { get { return (RegressionProblem)base.Problem; } }
 
-        public override bool SupportsPause { get { return true; } }
-
-
         protected override void Run(CancellationToken cancellationToken) {
             Stopwatch stopwatch = Stopwatch.StartNew();
 
@@ -222,11 +219,10 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 var coeffTable = CoefficientGraph(coeff, lambda, X_b.AllowedInputVariables, X_b.Dataset);
                 Results.Add(new Result(coeffTable.Name, coeffTable.Description, coeffTable));
             }
-            stopwatch.Stop();
 
             ItemCollection<IResult> models = new ItemCollection<IResult>();
             for (int modelIdx = 0; modelIdx < coeff.GetUpperBound(0); modelIdx++) {
-                var coeffs = GetRow(coeff, modelIdx);
+                var coeffs = Utils.GetRow(coeff, modelIdx);
                 var tree = Tree(relevantFuncs, coeffs, intercept[modelIdx]);
                 ISymbolicRegressionModel m = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeInterpreter());
                 models.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), m));
@@ -254,7 +250,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
             // calculate the pareto front
             int complexity(double[] modelCoeffs) => modelCoeffs.Count(val => val != 0);
-            var paretoFront = getParetoFront<IResult>(models.ToArray(), coeff, trainNMSE, complexity);
+            var paretoFront = Utils.NondominatedFilter(models.ToArray(), coeff, trainNMSE, complexity);
 
             if (Verbose) Results.Add(new Result("Models", "The mode l path returned by the Elastic Net Regression (not only the pareto-optimal subset). ", models));
             Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", new ItemCollection<IResult>(paretoFront)));
@@ -308,7 +304,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                     var name = expToString(exp, variableName);
                     B1.Add(new BasisFunction(name, data, false));
                     foreach (OpCode _op in validFuncs) {
-                        var inner_data = data.Select(x => eval(_op, x)).ToArray();
+                        var inner_data = data.Select(x => Utils.eval(_op, x)).ToArray();
                         if (!ok(inner_data)) continue;
                         // the name is for later parsing the Basis Functions to an ISymbolicExpressionTree
                         var inner_name = OpCodeToString.GetByFirst(_op) + "(" + name + ")";
@@ -354,38 +350,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             else return "'" + varname + "' ^ " + exponent;
         }
 
-        public static double eval(OpCode op, double x) {
-            switch (op) {
-                case OpCode.Absolute:
-                    return Math.Abs(x);
-                case OpCode.Log:
-                    return Math.Log10(x);
-                case OpCode.Sin:
-                    return Math.Sin(x);
-                case OpCode.Cos:
-                    return Math.Cos(x);
-                default:
-                    throw new Exception("Unimplemented operator: " + op.ToString());
-            }
-        }
 
-        public static IEnumerable<double> logspace(double start, double end, int count) {
-            double d = (double)count, p = end / start;
-            return Enumerable.Range(0, count).Select(i => start * Math.Pow(p, i / d));
-        }
-
-        // returns all row indices of the models in coeffs that are supposed to be in the pareto front
-        private static IEnumerable<T> getParetoFront<T>(T[] models, double[,] coeff, double[] error, Func<double[], int> complexity) {
-            double[][] qualities = new double[coeff.GetLength(0)][];
-            double[] asdf = new double[coeff.GetLength(0)];
-            for (int i = 0; i < coeff.GetLength(0); i++) {
-                qualities[i] = new double[2];
-                qualities[i][0] = error[i];
-                qualities[i][1] = complexity(GetRow(coeff, i));
-            }
-            var front = DominationCalculator<T>.CalculateBestParetoFront(models, qualities, new bool[2] { true, true });
-            return front.Select(val => val.Item1);
-        }
 
         private static IndexedDataTable<double> CoefficientGraph(double[,] coeff, double[] lambda, IEnumerable<string> allowedVars, IDataset ds, bool showOnlyRelevantBasisFuncs = true) {
             var coeffTable = new IndexedDataTable<double>("Coefficients", "The paths of standarized coefficient values over different lambda values");
@@ -549,13 +514,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
         private static bool ok(double[] data) => data.All(x => !double.IsNaN(x) && !double.IsInfinity(x));
 
-        // return the nth row of the matrix
-        private static T[] GetRow<T>(T[,] matrix, int n) {
-            var columns = matrix.GetLength(1);
-            var array = new T[columns];
-            for (int i = 0; i < columns; ++i)
-                array[i] = matrix[n, i];
-            return array;
-        }
+
     }
 }
