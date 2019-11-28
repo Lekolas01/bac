@@ -1,7 +1,10 @@
 ﻿using HeuristicLab.Optimization;
+using HeuristicLab.Problems.DataAnalysis;
 using HeuristicLab.Problems.DataAnalysis.Symbolic;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
@@ -50,5 +53,52 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                     throw new Exception("Unimplemented operator: " + op.ToString());
             }
         }
+
+        public static void SaveInFile(List<(IRegressionSolution, int)> solutions, double runtime, string path, string separator = ",", double maxNumBasisFuncs = 20) {
+            CultureInfo culture = new CultureInfo("en-US");
+            if (path == "") return;
+            double trial = 0.0;
+            foreach (var solution in solutions) {
+
+                // write out the accuracy of the most precise function into a log file
+                string outputStr = String.Join(separator, new []{
+                    solution.Item1.ProblemData.Name,
+                    "ffx",
+                    trial.ToString(),
+                    "\"['complexity', " + solution.Item2.ToString() + "]\"",
+                    solution.Item1.TrainingMeanSquaredError.ToString(culture),
+                    solution.Item1.TrainingMeanAbsoluteError.ToString(culture),
+                    solution.Item1.TestMeanSquaredError.ToString(culture),
+                    solution.Item1.TestMeanAbsoluteError.ToString(culture),
+                    (runtime / 1000).ToString(culture)
+                });
+                trial++;
+                File.AppendAllText(path, outputStr + Environment.NewLine);
+            }
+        }
+
+        //internal static void SaveInFile(IEnumerable<IResult> paretoFront, long runtime, string filePath, string separator) {
+        //    CultureInfo culture = new CultureInfo("en-US");
+        //    if (filePath == "") return;
+        //    double trial = 0.0;
+        //    foreach (var model in paretoFront) {
+
+        //        // write out the accuracy of the most precise function into a log file
+        //        string outputStr = String.Join(separator, new[]{
+        //            model.Item1.ProblemData.Name,
+        //            "ffx",
+        //            trial.ToString(),
+        //            "\"['complexity', " + model.Item2.ToString() + "]\"",
+        //            model.Item1.TrainingMeanSquaredError.ToString(culture),
+        //            model.Item1.TrainingMeanAbsoluteError.ToString(culture),
+        //            model.Item1.TestMeanSquaredError.ToString(culture),
+        //            model.Item1.TestMeanAbsoluteError.ToString(culture),
+        //            (runtime / 1000).ToString(culture)
+        //        });
+        //        trial++;
+        //        File.AppendAllText(path, outputStr + Environment.NewLine);
+        //    }
+        //}
     }
 }
+

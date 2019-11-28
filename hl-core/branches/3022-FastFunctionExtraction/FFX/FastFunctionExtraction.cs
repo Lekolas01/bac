@@ -52,6 +52,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         private const string MaxNumBasisFuncsParameterName = "Maximum Number of Basis Functions";
         private const string VerboseParameterName = "Verbose";
         private const string FilePathParameterName = "FilePath";
+        private static readonly CultureInfo culture = new CultureInfo("en-US");
 
         #region parameters
         public IValueParameter<BoolValue> ConsiderInteractionsParameter {
@@ -157,7 +158,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             Parameters.Add(new ValueParameter<CheckedItemCollection<EnumValue<OpCode>>>(NonlinearFuncsParameterName, "What nonlinear functions the models should be able to include.", items));
             Parameters.Add(new ValueParameter<IntValue>(MaxNumBasisFuncsParameterName, "Maximum Number of Basis Functions in the final models.", new IntValue(15)));
             Parameters.Add(new ValueParameter<BoolValue>(VerboseParameterName, "Verbose?", new BoolValue(false)));
-            Parameters.Add(new ValueParameter<StringValue>(FilePathParameterName, "The path where you want the program to write the results. If left empty, the result doesn't get written anywhere.", new StringValue(@"D:\LukaLeko\SourceTest\Repos\bachelorarbeit\doc\all_results.csv.txt")));
+            Parameters.Add(new ValueParameter<StringValue>(FilePathParameterName, "The path where you want the program to write the results. If left empty, the result doesn't get written anywhere.", new StringValue(@"")));
         }
 
         [StorableHook(HookType.AfterDeserialization)]
@@ -171,94 +172,88 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         public new RegressionProblem Problem { get { return (RegressionProblem)base.Problem; } }
 
         protected override void Run(CancellationToken cancellationToken) {
-            Stopwatch stopwatch = Stopwatch.StartNew();
-
             double[] lambda;
             double[,] coeff;
             double[] trainNMSE;
             double[] testNMSE;
             double[] intercept;
-            var univariateBases = CreateUnivariateBases(Problem.ProblemData);
+            IRegressionProblemData elnetData;
+            IEnumerable<BasisFunction> basisFunctions;
+            var interpreter = new SymbolicDataAnalysisExpressionTreeInterpreter();
+            var models = new List<ISymbolicRegressionModel>();
+            var allModels = new ItemCollection<IResult>();
+            //List<(IRegressionSolution, int)> solutions = new List<(IRegressionSolution, int)>();
 
-            // wraps the list of basis functions in a dataset, so that it can be passed on to the ElNet function
-            var X_b = PrepareData(Problem.ProblemData, univariateBases);
-
-            if (Verbose) Results.Add(new Result(
-              "Univariate basis Functions",
-              "A Dataset consisting of the univariate basis functions.",
-              X_b
-            ));
-
-            // this is the first iteration (only with the univariate bases)
-            // for the purpose of efficiency, only the "most important" sqrt(n) basis functions are to be selected for the merge of multivariate bases (see FFX paper)
-            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept);
-
-            IEnumerable<BasisFunction> relevantFuncs = FilterCoeffs(univariateBases, coeff);
-
-            if (ConsiderInteractions) {
-                relevantFuncs = CreateMultivariateBases(relevantFuncs);
-            }
-
-            // add denominator bases to the already existing basis functions
-            if (ConsiderDenominations) relevantFuncs = CreateDenominatorBases(Problem.ProblemData, relevantFuncs);
-
-            X_b = PrepareData(Problem.ProblemData, relevantFuncs);
-
-            if (Verbose) Results.Add(new Result(
-              "Final Basis Functions",
-              "Dataset which contains the Basis Functions after Step 1.",
-              X_b
-            ));
-
-            // "real" iteration with all Basis Functions in X_b
-            ElasticNetLinearRegression.RunElasticNetLinearRegression(X_b, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity);
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            ComputeModels(out basisFunctions, out lambda, out coeff, out trainNMSE, out testNMSE, out intercept, out elnetData);
+            stopwatch.Stop();
+            var runtime = stopwatch.ElapsedMilliseconds;
 
             if (Verbose) {
                 var errorTable = NMSEGraph(coeff, lambda, trainNMSE, testNMSE);
                 Results.Add(new Result(errorTable.Name, errorTable.Description, errorTable));
-                var coeffTable = CoefficientGraph(coeff, lambda, X_b.AllowedInputVariables, X_b.Dataset);
+                var coeffTable = CoefficientGraph(coeff, lambda, elnetData.AllowedInputVariables, elnetData.Dataset);
                 Results.Add(new Result(coeffTable.Name, coeffTable.Description, coeffTable));
             }
 
-            ItemCollection<IResult> models = new ItemCollection<IResult>();
-            for (int modelIdx = 0; modelIdx < coeff.GetUpperBound(0); modelIdx++) {
-                var coeffs = Utils.GetRow(coeff, modelIdx);
-                var tree = Tree(relevantFuncs, coeffs, intercept[modelIdx]);
-                ISymbolicRegressionModel m = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, new SymbolicDataAnalysisExpressionTreeInterpreter());
-                models.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), m));
+            int complexity(double[] modelCoeffs) => modelCoeffs.Count(val => val != 0);
 
-                char seperator = ';';
-                CultureInfo culture = new CultureInfo("en-US");
-
-                if (FilePath != "" && modelIdx == coeff.GetUpperBound(0) - 1) {
-                    // write out the accuracy of the most precise function into a log file
-                    IRegressionSolution newSolution = new RegressionSolution(m, Problem.ProblemData);
-                    Results.Add(new Result( "Solution", newSolution));
-                    
-                    string outputStr = Problem.ProblemData.Name;
-                    outputStr += seperator + "ffx";
-                    outputStr += seperator + "0.0";
-                    outputStr += seperator + "[]";
-                    outputStr += seperator + newSolution.TrainingMeanSquaredError.ToString(culture);
-                    outputStr += seperator + newSolution.TrainingMeanAbsoluteError.ToString(culture);
-                    outputStr += seperator + newSolution.TestMeanSquaredError.ToString(culture);
-                    outputStr += seperator + newSolution.TestMeanAbsoluteError.ToString(culture);
-                    outputStr += seperator + (stopwatch.ElapsedMilliseconds / 1000.0).ToString(culture);
-                    File.AppendAllText(FilePath, outputStr + Environment.NewLine);
-                }
+            for (int row = 0; row < coeff.GetUpperBound(0); row++) {
+                var coeffs = Utils.GetRow(coeff, row);
+                var modelComplexity = complexity(coeffs);
+                ISymbolicExpressionTree tree = Tree(basisFunctions, coeffs, intercept[row]);
+                ISymbolicRegressionModel model = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, interpreter);
+                //allModels.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), model));
+                models.Add(model);
+                //solutions.Add((new RegressionSolution(model, Problem.ProblemData), modelComplexity));
             }
 
             // calculate the pareto front
-            int complexity(double[] modelCoeffs) => modelCoeffs.Count(val => val != 0);
-            var paretoFront = Utils.NondominatedFilter(models.ToArray(), coeff, trainNMSE, complexity);
+            var paretoFront = Utils.NondominatedFilter(models.ToArray(), coeff, testNMSE, complexity);
+            var results = new ItemCollection<IResult>();
+            int modelIdx = 1;
+            foreach (var model in paretoFront)
+                results.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), model));
 
-            if (Verbose) Results.Add(new Result("Models", "The mode l path returned by the Elastic Net Regression (not only the pareto-optimal subset). ", models));
-            Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", new ItemCollection<IResult>(paretoFront)));
+            var solutions = paretoFront.Select(model => new RegressionSolution(model, Problem.ProblemData)); // to be used
+            Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", new ItemCollection<IResult>(results)));
+            //if (FilePath != "") Utils.SaveInFile(solutions2, runtime, FilePath, ",");
 
         }
 
-        private void SaveError(string log) {
-            throw new NotImplementedException();
+        private void ComputeModels(out IEnumerable<BasisFunction> basisFunctions, out double[] lambda, out double[,] coeff, out double[] trainNMSE, out double[] testNMSE, out double[] intercept, out IRegressionProblemData elnetData) {
+            basisFunctions = CreateUnivariateBases(Problem.ProblemData);
+
+            if (ConsiderInteractions) {
+                // wraps the list of basis functions in a dataset, so that it can be passed on to the ElNet function
+                elnetData = PrepareData(Problem.ProblemData, basisFunctions);
+
+                if (Verbose) Results.Add(new Result(
+                  "Univariate basis Functions",
+                  "A Dataset consisting of the univariate basis functions.",
+                  elnetData
+                ));
+
+                // for the purpose of efficiency, only the "most important" sqrt(n) basis functions are to be selected for the merge of multivariate bases step (see FFX paper)
+                ElasticNetLinearRegression.RunElasticNetLinearRegression(elnetData, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept);
+                basisFunctions = FilterCoeffs(basisFunctions, coeff);
+                basisFunctions = CreateMultivariateBases(basisFunctions);
+            }
+
+            // add denominator bases to the already existing basis functions
+            if (ConsiderDenominations) basisFunctions = CreateDenominatorBases(Problem.ProblemData, basisFunctions);
+
+            elnetData = PrepareData(Problem.ProblemData, basisFunctions);
+
+            if (Verbose) Results.Add(new Result(
+              "Final Basis Functions",
+              "Dataset which contains the Basis Functions after FFX Step 1.",
+              elnetData
+            ));
+
+            // "real" iteration with all Basis Functions in X_b
+            ElasticNetLinearRegression.RunElasticNetLinearRegression(elnetData, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity);
+
         }
 
         /* selects the sqrt(n) most important basis functions */
@@ -290,7 +285,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             return solution;
         }
 
-        private List<BasisFunction> CreateUnivariateBases(IRegressionProblemData problemData) {
+
+        private IEnumerable<BasisFunction> CreateUnivariateBases(IRegressionProblemData problemData) {
             var B1 = new List<BasisFunction>();
             var inputVariables = problemData.AllowedInputVariables;
             var validExponents = ConsiderExponentiations ? exponents : new double[] { 1 };
@@ -330,7 +326,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             return B1.Concat(B2);
         }
 
-        // creates 1 denominator basis function for each corresponding basis function from basisFunctions
+        // creates 1 denominator basis function for each basis function from basisFunctions
+        // returns a set of basis functions containing both the input basis functions and the generated denominator basis functions
         private IEnumerable<BasisFunction> CreateDenominatorBases(IRegressionProblemData problemData, IEnumerable<BasisFunction> basisFunctions) {
             var y = new BasisFunction(problemData.TargetVariable, problemData.TargetVariableValues.ToArray(), false);
             var denomBasisFuncs = new List<BasisFunction>();
@@ -349,8 +346,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             if (exponent.IsAlmost(3)) return OpCodeToString.GetByFirst(OpCode.Cube) + "(" + varname + ")";
             else return "'" + varname + "' ^ " + exponent;
         }
-
-
 
         private static IndexedDataTable<double> CoefficientGraph(double[,] coeff, double[] lambda, IEnumerable<string> allowedVars, IDataset ds, bool showOnlyRelevantBasisFuncs = true) {
             var coeffTable = new IndexedDataTable<double>("Coefficients", "The paths of standarized coefficient values over different lambda values");
