@@ -3,14 +3,12 @@ using HeuristicLab.Problems.DataAnalysis;
 using HeuristicLab.Problems.DataAnalysis.Symbolic;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
 using System.Linq;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
     internal static class Utils {
         // returns n logarithmically evenly spaced double values ranging from start to end
-        public static double[] logspace(double start, double end, int n) {
+        internal static double[] logspace(double start, double end, int n) {
             if (start <= 0) throw new ArgumentException(nameof(start));
             if (end <= 0) throw new ArgumentException(nameof(end));
             if (n <= 1) throw new ArgumentException(nameof(n));
@@ -19,7 +17,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         }
 
         // return the nth row of a matrix
-        public static T[] GetRow<T>(T[,] matrix, int n) {
+        internal static T[] GetRow<T>(T[,] matrix, int n) {
             var columns = matrix.GetLength(1);
             var array = new T[columns];
             for (int i = 0; i < columns; ++i)
@@ -28,7 +26,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         }
 
         // returns all row indices of the models in coeffs that are supposed to be in a pareto front
-        public static IEnumerable<T> NondominatedFilter<T>(T[] models, double[,] coeff, double[] error, Func<double[], int> complexity) {
+        internal static IEnumerable<T> NondominatedFilter<T>(T[] models, double[,] coeff, double[] error, Func<double[], int> complexity) {
             double[][] qualities = new double[coeff.GetLength(0)][];
             for (int i = 0; i < coeff.GetLength(0); i++) {
                 qualities[i] = new double[2];
@@ -39,7 +37,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             return front.Select(val => val.Item1);
         }
 
-        public static double eval(OpCode op, double x) {
+        internal static double eval(OpCode op, double x) {
             switch (op) {
                 case OpCode.Absolute:
                     return Math.Abs(x);
@@ -54,51 +52,29 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             }
         }
 
-        public static void SaveInFile(List<(IRegressionSolution, int)> solutions, double runtime, string path, string separator = ",", double maxNumBasisFuncs = 20) {
-            CultureInfo culture = new CultureInfo("en-US");
-            if (path == "") return;
-            double trial = 0.0;
-            foreach (var solution in solutions) {
-
-                // write out the accuracy of the most precise function into a log file
-                string outputStr = String.Join(separator, new []{
-                    solution.Item1.ProblemData.Name,
-                    "ffx",
-                    trial.ToString(),
-                    "\"['complexity', " + solution.Item2.ToString() + "]\"",
-                    solution.Item1.TrainingMeanSquaredError.ToString(culture),
-                    solution.Item1.TrainingMeanAbsoluteError.ToString(culture),
-                    solution.Item1.TestMeanSquaredError.ToString(culture),
-                    solution.Item1.TestMeanAbsoluteError.ToString(culture),
-                    (runtime / 1000).ToString(culture)
-                });
-                trial++;
-                File.AppendAllText(path, outputStr + Environment.NewLine);
-            }
-        }
-
-        //internal static void SaveInFile(IEnumerable<IResult> paretoFront, long runtime, string filePath, string separator) {
+        //internal static void SaveInFile(List<(IRegressionSolution, int)> solutions, double runtime, string path, string separator = ",", double maxNumBasisFuncs = 20) {
         //    CultureInfo culture = new CultureInfo("en-US");
-        //    if (filePath == "") return;
+        //    if (path == "") return;
         //    double trial = 0.0;
-        //    foreach (var model in paretoFront) {
+        //    foreach (var solution in solutions) {
 
         //        // write out the accuracy of the most precise function into a log file
         //        string outputStr = String.Join(separator, new[]{
-        //            model.Item1.ProblemData.Name,
+        //            solution.Item1.ProblemData.Name,
         //            "ffx",
         //            trial.ToString(),
-        //            "\"['complexity', " + model.Item2.ToString() + "]\"",
-        //            model.Item1.TrainingMeanSquaredError.ToString(culture),
-        //            model.Item1.TrainingMeanAbsoluteError.ToString(culture),
-        //            model.Item1.TestMeanSquaredError.ToString(culture),
-        //            model.Item1.TestMeanAbsoluteError.ToString(culture),
+        //            "\"['complexity', " + solution.Item2.ToString() + "]\"",
+        //            solution.Item1.TrainingMeanSquaredError.ToString(culture),
+        //            solution.Item1.TrainingMeanAbsoluteError.ToString(culture),
+        //            solution.Item1.TestMeanSquaredError.ToString(culture),
+        //            solution.Item1.TestMeanAbsoluteError.ToString(culture),
         //            (runtime / 1000).ToString(culture)
         //        });
         //        trial++;
         //        File.AppendAllText(path, outputStr + Environment.NewLine);
         //    }
         //}
+
+
     }
 }
-
