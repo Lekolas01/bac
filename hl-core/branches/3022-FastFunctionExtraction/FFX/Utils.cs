@@ -51,30 +51,5 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                     throw new Exception("Unimplemented operator: " + op.ToString());
             }
         }
-
-        //internal static void SaveInFile(List<(IRegressionSolution, int)> solutions, double runtime, string path, string separator = ",", double maxNumBasisFuncs = 20) {
-        //    CultureInfo culture = new CultureInfo("en-US");
-        //    if (path == "") return;
-        //    double trial = 0.0;
-        //    foreach (var solution in solutions) {
-
-        //        // write out the accuracy of the most precise function into a log file
-        //        string outputStr = String.Join(separator, new[]{
-        //            solution.Item1.ProblemData.Name,
-        //            "ffx",
-        //            trial.ToString(),
-        //            "\"['complexity', " + solution.Item2.ToString() + "]\"",
-        //            solution.Item1.TrainingMeanSquaredError.ToString(culture),
-        //            solution.Item1.TrainingMeanAbsoluteError.ToString(culture),
-        //            solution.Item1.TestMeanSquaredError.ToString(culture),
-        //            solution.Item1.TestMeanAbsoluteError.ToString(culture),
-        //            (runtime / 1000).ToString(culture)
-        //        });
-        //        trial++;
-        //        File.AppendAllText(path, outputStr + Environment.NewLine);
-        //    }
-        //}
-
-
     }
 }

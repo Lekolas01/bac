@@ -35,16 +35,5 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction
             return new BasisFunction(a.Var + " * " + b.Var, newVal, false);
         }
 
-        public int Complexity() => 1;
-
-        public ISymbolicExpressionTree Tree()
-        {
-            return null;
-        }
-
-        public override string ToString() {
-            return this.Var;
-        }
-
     }
 }

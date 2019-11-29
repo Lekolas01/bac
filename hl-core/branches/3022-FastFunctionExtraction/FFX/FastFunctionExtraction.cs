@@ -158,7 +158,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             Parameters.Add(new ValueParameter<CheckedItemCollection<EnumValue<OpCode>>>(NonlinearFuncsParameterName, "What nonlinear functions the models should be able to include.", items));
             Parameters.Add(new ValueParameter<IntValue>(MaxNumBasisFuncsParameterName, "Maximum Number of Basis Functions in the final models.", new IntValue(20)));
             Parameters.Add(new ValueParameter<BoolValue>(VerboseParameterName, "Verbose?", new BoolValue(true)));
-            Parameters.Add(new ValueParameter<StringValue>(FilePathParameterName, "The path where you want the program to write the results. If left empty, the result doesn't get written anywhere.", new StringValue(@"")));
+            Parameters.Add(new ValueParameter<StringValue>(FilePathParameterName, "The path where you want the program to write the results. If left empty, the result doesn't get written anywhere.", new StringValue(@"../../../new_file.csv")));
         }
 
         [StorableHook(HookType.AfterDeserialization)]
@@ -173,14 +173,12 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
         protected override void Run(CancellationToken cancellationToken) {
             var interpreter = new SymbolicDataAnalysisExpressionTreeInterpreter();
-            var models = new List<ISymbolicRegressionModel>();
             var modelsWithComplexity = new List<(ISymbolicRegressionModel, int)>();
 
             Stopwatch stopwatch = Stopwatch.StartNew();
             RunFFX(out var basisFunctions, out var lambda, out var coeff, out var trainNMSE, out var testNMSE, out var intercept, out var elnetData);
             stopwatch.Stop();
             var runtime = stopwatch.ElapsedTicks / 10000000.0; // convert to seconds
-
             if (Verbose) {
                 var errorTable = NMSEGraph(coeff, lambda, trainNMSE, testNMSE);
                 Results.Add(new Result(errorTable.Name, errorTable.Description, errorTable));
@@ -188,26 +186,31 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 Results.Add(new Result(coeffTable.Name, coeffTable.Description, coeffTable));
             }
 
-            int complexity(double[] modelCoeffs) => modelCoeffs.Count(val => val != 0);
+            int complexity(double[] modelCoeffs) => modelCoeffs.Count(val => val != 0) + 1;
 
             for (int row = 0; row < coeff.GetUpperBound(0); row++) {
                 var coeffs = Utils.GetRow(coeff, row);
                 var numBasisFuncs = complexity(coeffs);
                 if (numBasisFuncs > MaxNumBasisFuncs) continue;
                 ISymbolicExpressionTree tree = Tree(basisFunctions, coeffs, intercept[row]);
-                ISymbolicRegressionModel model = new SymbolicRegressionModel(Problem.ProblemData.TargetVariable, tree, interpreter);
-                models.Add(model);
+                ISymbolicRegressionModel model = new SymbolicRegressionModel(elnetData.TargetVariable, tree, interpreter);
                 modelsWithComplexity.Add((model, numBasisFuncs));
             }
 
             // calculate the pareto front
             var paretoFront = Utils.NondominatedFilter(modelsWithComplexity.ToArray(), coeff, testNMSE, complexity);
-            var results = new ItemCollection<IResult>();
+            var results = new ItemCollection<ItemCollection<IResult>>();
             int modelIdx = 1;
-            foreach (var model in paretoFront)
-                results.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx++.ToString()), model.Item1));
+            foreach (var model in paretoFront) {
+                results.Add(new ItemCollection<IResult> (3){ 
+                    new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), model.Item1),
+                    new Result("Model Complexity", new IntValue(model.Item2)),
+                    new Result("Model Accuracy", new RegressionSolution(model.Item1, Problem.ProblemData))
+                });
+                modelIdx++;
+            }
 
-            Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", new ItemCollection<IResult>(results)));
+            Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", results));
             if (FilePath != "") 
                 SaveInFile(paretoFront, runtime, FilePath, ",");
         }
@@ -241,7 +244,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 elnetData
             ));
             if (ConsiderInteractions) {
-
                 // for the purpose of efficiency, only the "most important" sqrt(n) basis functions are to be selected for the merge of multivariate bases step (see FFX paper)
                 ElasticNetLinearRegression.RunElasticNetLinearRegression(elnetData, Penalty, out var lambda, out var trainNMSE, out var testNMSE, out var coeff, out var intercept);
                 basisFunctions = FilterCoeffs(basisFunctions, coeff);

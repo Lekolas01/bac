@@ -355,3 +355,4 @@ MigrationBackup/
 # eigene Änderungen
 .svn/
 trunk/
+new_file.csv
