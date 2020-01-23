@@ -21,7 +21,6 @@ using System.IO;
 using System.Diagnostics;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
-
     [Item(Name = "FastFunctionExtraction", Description = "An FFX algorithm.")]
     [Creatable(Category = CreatableAttribute.Categories.Algorithms, Priority = 999)]
     [StorableType("689280F7-E371-44A2-98A5-FCEDF22CA343")] // for persistence (storing your algorithm to a files or transfer to HeuristicLab.Hive
@@ -156,9 +155,9 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             Parameters.Add(new FixedValueParameter<DoubleValue>(PenaltyParameterName, "Penalty factor (alpha) for balancing between ridge (0.0) and lasso (1.0) regression", new DoubleValue(0.9)));
             Parameters.Add(new OptionalValueParameter<DoubleValue>(LambdaParameterName, "Optional: the value of lambda for which to calculate an elastic-net solution. lambda == null => calculate the whole path of all lambdas"));
             Parameters.Add(new ValueParameter<CheckedItemCollection<EnumValue<OpCode>>>(NonlinearFuncsParameterName, "What nonlinear functions the models should be able to include.", items));
-            Parameters.Add(new ValueParameter<IntValue>(MaxNumBasisFuncsParameterName, "Maximum Number of Basis Functions in the final models.", new IntValue(20)));
+            Parameters.Add(new ValueParameter<IntValue>(MaxNumBasisFuncsParameterName, "Maximum Number of Basis Functions in the final models. (Negative Number -> no upper bound)", new IntValue(-1)));
             Parameters.Add(new ValueParameter<BoolValue>(VerboseParameterName, "Verbose?", new BoolValue(true)));
-            Parameters.Add(new ValueParameter<StringValue>(FilePathParameterName, "The path where you want the program to write the results. If left empty, the result doesn't get written anywhere.", new StringValue(@"../../../new_file.csv")));
+            Parameters.Add(new ValueParameter<StringValue>(FilePathParameterName, "The path where you want the program to write the results. If left empty, the result doesn't get written anywhere.", new StringValue(@"")));
         }
 
         [StorableHook(HookType.AfterDeserialization)]
@@ -178,7 +177,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             Stopwatch stopwatch = Stopwatch.StartNew();
             RunFFX(out var basisFunctions, out var lambda, out var coeff, out var trainNMSE, out var testNMSE, out var intercept, out var elnetData);
             stopwatch.Stop();
-            var runtime = stopwatch.ElapsedTicks / 10000000.0; // convert to seconds
+
+            var runtime = stopwatch.ElapsedTicks / 10000000.0; // in seconds
             if (Verbose) {
                 var errorTable = NMSEGraph(coeff, lambda, trainNMSE, testNMSE);
                 Results.Add(new Result(errorTable.Name, errorTable.Description, errorTable));
@@ -202,7 +202,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             var results = new ItemCollection<ItemCollection<IResult>>();
             int modelIdx = 1;
             foreach (var model in paretoFront) {
-                results.Add(new ItemCollection<IResult> (3){ 
+                results.Add(new ItemCollection<IResult>(3){
                     new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), model.Item1),
                     new Result("Model Complexity", new IntValue(model.Item2)),
                     new Result("Model Accuracy", new RegressionSolution(model.Item1, Problem.ProblemData))
@@ -211,7 +211,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             }
 
             Results.Add(new Result("Pareto Front", "The Pareto Front of the Models. ", results));
-            if (FilePath != "") 
+            if (FilePath != "")
                 SaveInFile(paretoFront, runtime, FilePath, ",");
         }
 
@@ -220,21 +220,15 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             CalculateCoefficients(basisFunctions, out lambda, out coeff, out trainNMSE, out testNMSE, out intercept, out elnetData);
         }
 
-        private void CalculateCoefficients(IEnumerable<BasisFunction> basisFunctions, out double[] lambda, out double[,] coeff, out double[] trainNMSE, out double[] testNMSE, out double[] intercept, out IRegressionProblemData elnetData) {
-            elnetData = PrepareData(Problem.ProblemData, basisFunctions);
-
-            if (Verbose) Results.Add(new Result(
-              "Final Basis Functions",
-              "Dataset which contains the Basis Functions after FFX Step 1.",
-              elnetData
-            ));
-
-            // "real" iteration with all Basis Functions in X_b
-            ElasticNetLinearRegression.RunElasticNetLinearRegression(elnetData, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity);
-        }
-
         private IEnumerable<BasisFunction> CreateBasisFunctions() {
             IEnumerable<BasisFunction> basisFunctions = CreateUnivariateBases(Problem.ProblemData);
+
+            if (Verbose) Results.Add(new Result(
+                "Problem.ProblemData",
+                "The problem data the algorithm gets as input.",
+                Problem.ProblemData
+            ));
+
             // wraps the list of basis functions in a dataset, so that it can be passed on to the ElNet function
             var elnetData = PrepareData(Problem.ProblemData, basisFunctions);
 
@@ -243,6 +237,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                 "A Dataset consisting of the univariate basis functions.",
                 elnetData
             ));
+
             if (ConsiderInteractions) {
                 // for the purpose of efficiency, only the "most important" sqrt(n) basis functions are to be selected for the merge of multivariate bases step (see FFX paper)
                 ElasticNetLinearRegression.RunElasticNetLinearRegression(elnetData, Penalty, out var lambda, out var trainNMSE, out var testNMSE, out var coeff, out var intercept);
@@ -254,6 +249,19 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             // add denominator bases to the already existing basis functions
             if (ConsiderDenominations) basisFunctions = CreateDenominatorBases(Problem.ProblemData, basisFunctions);
             return basisFunctions;
+        }
+
+        private void CalculateCoefficients(IEnumerable<BasisFunction> basisFunctions, out double[] lambda, out double[,] coeff, out double[] trainNMSE, out double[] testNMSE, out double[] intercept, out IRegressionProblemData elnetData) {
+            elnetData = PrepareData(Problem.ProblemData, basisFunctions);
+
+            if (Verbose) Results.Add(new Result(
+              "Basis Functions",
+              "Dataset which contains the Basis Functions after FFX Step 1.",
+              elnetData
+            ));
+
+            // "real" iteration with all Basis Functions in X_b
+            ElasticNetLinearRegression.RunElasticNetLinearRegression(elnetData, Penalty, out lambda, out trainNMSE, out testNMSE, out coeff, out intercept, double.NegativeInfinity, double.PositiveInfinity);
         }
 
         /* selects the sqrt(n) most important basis functions */
@@ -457,7 +465,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
          * It does so by creating a string which will then get parsed by the InfixExpressionParser
          */
         private ISymbolicExpressionTree Tree(IEnumerable<BasisFunction> basisFunctions, double[] coeffs, double offset) {
-            if (basisFunctions.Count(val => true) != coeffs.Length) throw new Exception("This should be unreachable code.");
+            if (basisFunctions.Count(val => true) != coeffs.Length) throw new ArgumentException();
             var culture = new CultureInfo("en-US");
             var numNumeratorFuncs = ConsiderDenominations ? basisFunctions.Count() / 2 : basisFunctions.Count();
 
@@ -500,6 +508,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             matrix.AddVariable(problemData.TargetVariable, problemData.TargetVariableValues.ToList());
             IEnumerable<string> allowedInputVars = matrix.VariableNames.Where(x => !x.Equals(problemData.TargetVariable)).ToArray();
             IRegressionProblemData rpd = new RegressionProblemData(matrix, allowedInputVars, problemData.TargetVariable);
+            rpd.TargetVariable = problemData.TargetVariable;
             rpd.TrainingPartition.Start = problemData.TrainingPartition.Start;
             rpd.TrainingPartition.End = problemData.TrainingPartition.End;
             rpd.TestPartition.Start = problemData.TestPartition.Start;

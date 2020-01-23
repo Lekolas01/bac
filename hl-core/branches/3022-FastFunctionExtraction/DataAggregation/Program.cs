@@ -43,8 +43,8 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             int numAlgs = 0;
 
             Dictionary<string, Dictionary<string, RunData>> data_dic = new Dictionary<string, Dictionary<string, RunData>>();
-            foreach (var line in File.ReadAllLines(@"D:\LukaLeko\SourceTest\Repos\bachelorarbeit\doc\all_results.csv.txt")) {
-                string[] values = line.Split(';');
+            foreach (var line in File.ReadAllLines(@"D:\LukaLeko\SourceTest\Repos\bachelorarbeit\PennML_Benchmarktests\regression-benchmark\results-final.csv.txt")) {
+                string[] values = line.Split(',');
                 Debug.Assert(9 == values.Length);
                 string problem_name = values[0];
                 string alg_name = values[1];
