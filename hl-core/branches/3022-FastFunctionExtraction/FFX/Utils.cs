@@ -1,13 +1,14 @@
 ﻿using HeuristicLab.Optimization;
 using HeuristicLab.Problems.DataAnalysis;
 using HeuristicLab.Problems.DataAnalysis.Symbolic;
+using HeuristicLab.Problems.DataAnalysis.Symbolic.Regression;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
     internal static class Utils {
-        // returns n logarithmically evenly spaced double values ranging from start to end
+        // returns n geometrically evenly spaced double values ranging from start to end
         internal static double[] logspace(double start, double end, int n) {
             if (start <= 0) throw new ArgumentException(nameof(start));
             if (end <= 0) throw new ArgumentException(nameof(end));
@@ -49,6 +50,16 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
                     return Math.Cos(x);
                 default:
                     throw new Exception("Unimplemented operator: " + op.ToString());
+            }
+        }
+
+        internal class SymbolicRegressionModelSameComplexity : EqualityComparer<(ISymbolicRegressionModel, int)> {
+            public override bool Equals((ISymbolicRegressionModel, int) x, (ISymbolicRegressionModel, int) y) {
+                return x.Item2 == y.Item2;
+            }
+
+            public override int GetHashCode((ISymbolicRegressionModel, int) obj) {
+                return obj.Item2.GetHashCode();
             }
         }
     }

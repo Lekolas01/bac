@@ -48,7 +48,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         private const string NonlinearFuncsParameterName = "Nonlinear Functions";
         private const string PenaltyParameterName = "Penalty";
         private const string LambdaParameterName = "Lambda";
-        private const string MaxNumBasisFuncsParameterName = "Maximum Number of Basis Functions";
         private const string VerboseParameterName = "Verbose";
         private const string FilePathParameterName = "FilePath";
         private static readonly CultureInfo culture = new CultureInfo("en-US");
@@ -77,9 +76,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
         }
         public IValueParameter<CheckedItemCollection<EnumValue<OpCode>>> NonlinearFuncsParameter {
             get { return (IValueParameter<CheckedItemCollection<EnumValue<OpCode>>>)Parameters[NonlinearFuncsParameterName]; }
-        }
-        public IValueParameter<IntValue> MaxNumBasisFuncsParameter {
-            get { return (IValueParameter<IntValue>)Parameters[MaxNumBasisFuncsParameterName]; }
         }
         public IValueParameter<BoolValue> VerboseParameter {
             get { return (IValueParameter<BoolValue>)Parameters[VerboseParameterName]; }
@@ -123,10 +119,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             get { return NonlinearFuncsParameter.Value; }
             set { NonlinearFuncsParameter.Value = value; }
         }
-        public int MaxNumBasisFuncs {
-            get { return MaxNumBasisFuncsParameter.Value.Value; }
-            set { MaxNumBasisFuncsParameter.Value.Value = value; }
-        }
         public bool Verbose {
             get { return VerboseParameter.Value.Value; }
             set { VerboseParameter.Value.Value = value; }
@@ -155,8 +147,7 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             Parameters.Add(new FixedValueParameter<DoubleValue>(PenaltyParameterName, "Penalty factor (alpha) for balancing between ridge (0.0) and lasso (1.0) regression", new DoubleValue(0.9)));
             Parameters.Add(new OptionalValueParameter<DoubleValue>(LambdaParameterName, "Optional: the value of lambda for which to calculate an elastic-net solution. lambda == null => calculate the whole path of all lambdas"));
             Parameters.Add(new ValueParameter<CheckedItemCollection<EnumValue<OpCode>>>(NonlinearFuncsParameterName, "What nonlinear functions the models should be able to include.", items));
-            Parameters.Add(new ValueParameter<IntValue>(MaxNumBasisFuncsParameterName, "Maximum Number of Basis Functions in the final models. (Negative Number -> no upper bound)", new IntValue(-1)));
-            Parameters.Add(new ValueParameter<BoolValue>(VerboseParameterName, "Verbose?", new BoolValue(true)));
+            Parameters.Add(new ValueParameter<BoolValue>(VerboseParameterName, "Verbose", new BoolValue(true)));
             Parameters.Add(new ValueParameter<StringValue>(FilePathParameterName, "The path where you want the program to write the results. If left empty, the result doesn't get written anywhere.", new StringValue(@"")));
         }
 
@@ -191,7 +182,6 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
             for (int row = 0; row < coeff.GetUpperBound(0); row++) {
                 var coeffs = Utils.GetRow(coeff, row);
                 var numBasisFuncs = complexity(coeffs);
-                if (numBasisFuncs > MaxNumBasisFuncs) continue;
                 ISymbolicExpressionTree tree = Tree(basisFunctions, coeffs, intercept[row]);
                 ISymbolicRegressionModel model = new SymbolicRegressionModel(elnetData.TargetVariable, tree, interpreter);
                 modelsWithComplexity.Add((model, numBasisFuncs));
@@ -199,14 +189,16 @@ namespace HeuristicLab.Algorithms.DataAnalysis.FastFunctionExtraction {
 
             // calculate the pareto front
             var paretoFront = Utils.NondominatedFilter(modelsWithComplexity.ToArray(), coeff, testNMSE, complexity);
-            var results = new ItemCollection<ItemCollection<IResult>>();
+            modelsWithComplexity = modelsWithComplexity.Distinct(new Utils.SymbolicRegressionModelSameComplexity()).ToList();
+
+            var results = new ItemCollection<IResult>();
             int modelIdx = 1;
-            foreach (var model in paretoFront) {
-                results.Add(new ItemCollection<IResult>(3){
-                    new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), model.Item1),
-                    new Result("Model Complexity", new IntValue(model.Item2)),
-                    new Result("Model Accuracy", new RegressionSolution(model.Item1, Problem.ProblemData))
-                });
+            foreach (var model in modelsWithComplexity) {
+                results.Add(new Result("Model " + (modelIdx < 10 ? "0" + modelIdx : modelIdx.ToString()), model.Item1));
+                //results.Add(new ItemCollection<IResult>(3){
+                    //new Result("Model Complexity", new IntValue(model.Item2)),
+                    //new Result("Model Accuracy", new RegressionSolution(model.Item1, Problem.ProblemData))
+                //});
                 modelIdx++;
             }
 
